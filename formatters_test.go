@@ -77,3 +77,86 @@ func TestEnvFormatter_parseRawIntoMap(t *testing.T) {
 		})
 	}
 }
+
+func TestJSONFormatter_Unmarshal(t *testing.T) {
+	type args struct {
+		data []byte
+		v    any
+	}
+	tests := []struct {
+		name    string
+		opts    []JSONFormatterOption
+		args    args
+		wantErr bool
+		want    any
+	}{
+		{
+			name: "empty",
+			args: args{
+				data: []byte(""),
+				v:    &map[string]any{},
+			},
+			wantErr: true,
+		},
+		{
+			name: "with keys",
+			args: args{
+				data: []byte(`{"foo": "bar"}`),
+				v:    &map[string]any{},
+			},
+			wantErr: false,
+			want:    &map[string]any{"foo": "bar"},
+		},
+		{
+			name: "unknown keys on disallow unknown fields",
+			opts: []JSONFormatterOption{DisallowUnknownFields},
+			args: args{
+				data: []byte(`{"int": 123, foo": "bar"}`),
+				v:    &TestConfig{},
+			},
+			wantErr: true,
+		},
+		{
+			name: "unknown keys on no disallow unknown fields",
+			opts: []JSONFormatterOption{},
+			args: args{
+				data: []byte(`{"int": 123, "foo": "bar"}`),
+				v:    &TestConfig{},
+			},
+			wantErr: false,
+			want:    &TestConfig{Int: 123},
+		},
+		{
+			name: "unmarshal into struct",
+			args: args{
+				data: []byte(`{"int": 123, "inner": {"string": "test"}}`),
+				v:    &TestConfig{},
+			},
+			wantErr: false,
+			want:    &TestConfig{Int: 123, Inner: testInnerConfig{String: "test"}},
+		},
+		{
+			name: "nil option",
+			opts: []JSONFormatterOption{nil},
+			args: args{
+				data: []byte(`{"int": 123, "inner": {"string": "test"}}`),
+				v:    &TestConfig{},
+			},
+			wantErr: false,
+			want:    &TestConfig{Int: 123, Inner: testInnerConfig{String: "test"}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			jf := NewJSONFormatter(tt.opts...)
+			if err := jf.Unmarshal(tt.args.data, tt.args.v); (err != nil) != tt.wantErr {
+				t.Fatalf("Unmarshal() error = %v, wantErr %v", err, tt.wantErr)
+			} else if tt.wantErr {
+				return
+			}
+			if !reflect.DeepEqual(tt.args.v, tt.want) {
+				t.Fatalf("Unmarshal() got = %v, want %v", tt.args.v, tt.want)
+			}
+		})
+	}
+}

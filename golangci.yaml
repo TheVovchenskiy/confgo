@@ -93,6 +93,7 @@ linters:
     - whitespace
     - zerologlint
     - godot
+    - exhaustruct
   disable:
     - depguard
     - forbidigo
@@ -100,7 +101,6 @@ linters:
     - tagalign
     - wrapcheck
     - wsl_v5
-    - exhaustruct
 
   settings:
     testpackage:
@@ -122,6 +122,15 @@ linters:
         - t *testing.T
         - l Loader
         - i int
+    exhaustruct:
+      allow-empty: true
+      exclude:
+        - '.+env(/v\d\d)?\.Options$'
+        - '.+confgo\.Loader$'
+        - '.+confgo\.ModTimeWatcher'
+    paralleltest:
+      ignore-missing: true
+      ignore-missing-subtests: true
   exclusions:
     generated: lax
     presets:
@@ -135,6 +144,7 @@ linters:
           - funlen
           - maintidx
           - err113
+          - exhaustruct
         path: _test.go
       - linters:
           - gochecknoglobals

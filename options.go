@@ -17,22 +17,20 @@ func WithNamedValidator(name string, v ValidateFunc) Option {
 }
 
 // WithEnv adds a Loader layer with EnvSource and EnvFormatter to parse config data from.
-func WithEnv() Option {
-	return func(cm *ConfigManager) error {
-		cm.AddLoader(Loader{
-			Source:    NewEnvSource(),
-			Formatter: NewEnvFormatter(),
-		})
-		return nil
-	}
+func WithEnv(cm *ConfigManager) error {
+	cm.AddLoader(Loader{
+		Source:    NewEnvSource(),
+		Formatter: NewEnvFormatter(),
+	})
+	return nil
 }
 
 // WithJSONFile adds a Loader layer with FileSource and JSONFormatter to parse config data from.
-func WithJSONFile(file string) Option {
+func WithJSONFile(file string, jsonFormatterOptions ...JSONFormatterOption) Option {
 	return func(cm *ConfigManager) error {
 		cm.AddLoader(Loader{
 			Source:    NewFileSource(file),
-			Formatter: NewJSONFormatter(),
+			Formatter: NewJSONFormatter(jsonFormatterOptions...),
 		})
 		return nil
 	}
@@ -40,13 +38,17 @@ func WithJSONFile(file string) Option {
 
 // WithDynamicJSONFile adds a Loader layer with FileSource, JSONFormatter and
 // ModTimeWatcher with callbacks to parse and dynamically update config data from.
-// Callbacks might be nil.
-func WithDynamicJSONFile(file string, onUpdateSuccess CallbackFunc, onUpdateError CallbackErrFunc) Option {
+func WithDynamicJSONFile(
+	file string,
+	onUpdateSuccess CallbackFunc,
+	onUpdateError CallbackErrFunc,
+	jsonFormatterOptions ...JSONFormatterOption,
+) Option {
 	return func(cm *ConfigManager) error {
 		s := NewFileSource(file)
 		cm.AddLoader(Loader{
 			Source:          s,
-			Formatter:       NewJSONFormatter(),
+			Formatter:       NewJSONFormatter(jsonFormatterOptions...),
 			Watcher:         NewModTimeWatcher(s),
 			OnUpdateSuccess: onUpdateSuccess,
 			OnUpdateError:   onUpdateError,

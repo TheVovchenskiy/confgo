@@ -1,6 +1,7 @@
 package confgo
 
 import (
+	"sync"
 	"time"
 )
 
@@ -57,4 +58,39 @@ func (fw *ModTimeWatcher) Watch(callback func()) {
 func (fw *ModTimeWatcher) Stop() error {
 	close(fw.stop)
 	return nil
+}
+
+var _ Watcher = (*TriggerWatcher)(nil)
+
+// TriggerWatcher is a simple watcher that calls a callback every time the Trigger method is called.
+// In practice, it's useful for testing.
+type TriggerWatcher struct {
+	mu       sync.Mutex
+	callback func()
+}
+
+func NewTriggerWatcher() *TriggerWatcher {
+	return &TriggerWatcher{
+		mu:       sync.Mutex{},
+		callback: nil,
+	}
+}
+
+func (tw *TriggerWatcher) Watch(callback func()) {
+	tw.mu.Lock()
+	defer tw.mu.Unlock()
+	tw.callback = callback
+}
+
+func (tw *TriggerWatcher) Stop() error {
+	return nil
+}
+
+func (tw *TriggerWatcher) Trigger() {
+	tw.mu.Lock()
+	cb := tw.callback
+	tw.mu.Unlock()
+	if cb != nil {
+		cb()
+	}
 }

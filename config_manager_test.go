@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
-	"sync"
 	"testing"
 )
 
@@ -50,37 +49,13 @@ func (f *fakeFormatter) Unmarshal(_ []byte, v any) error {
 	return nil
 }
 
-var _ Watcher = (*fakeWatcher)(nil)
-
-type fakeWatcher struct {
-	mu sync.Mutex
-	cb func()
-}
-
-func (fw *fakeWatcher) Watch(cb func()) {
-	fw.mu.Lock()
-	defer fw.mu.Unlock()
-	fw.cb = cb
-}
-
-func (fw *fakeWatcher) Stop() error { return nil }
-
-func (fw *fakeWatcher) Trigger() {
-	fw.mu.Lock()
-	cb := fw.cb
-	fw.mu.Unlock()
-	if cb != nil {
-		cb()
-	}
-}
-
 type testInnerConfig struct {
 	Int    int    `json:"int"`
 	String string `json:"string"`
 }
 
-type testConfig struct {
-	Int      int               `json:"int"`
+type TestConfig struct {
+	Int      int               `json:"int" env:"INT"`
 	IntPtr   *int              `json:"int_ptr"`
 	Inner    testInnerConfig   `json:"inner"`
 	InnerPtr *testInnerConfig  `json:"inner_ptr"`
@@ -88,31 +63,71 @@ type testConfig struct {
 	Slice    []string          `json:"slice"`
 }
 
-var _ Merger = (*testConfigAsMerger)(nil)
-
-type testConfigAsMerger struct {
-	testConfig
+func testConfigConstructor() any {
+	return &TestConfig{}
 }
 
-func (c *testConfigAsMerger) Merge(other any) error {
-	otherCfg, ok := other.(*testConfigAsMerger)
+var _ Merger = (*TestConfigAsMerger)(nil)
+
+type TestConfigAsMerger struct {
+	TestConfig
+}
+
+func testConfigAsMergerConstructor() any {
+	return &TestConfigAsMerger{}
+}
+
+func (c *TestConfigAsMerger) Merge(other any) error {
+	otherCfg, ok := other.(*TestConfigAsMerger)
 	if !ok {
-		return fmt.Errorf("error converting other config to *testConfigAsMerger")
+		return fmt.Errorf("error converting other config to *TestConfigAsMerger")
+	}
+	if c.Int == 123 {
+		return fmt.Errorf("test merge error")
 	}
 	c.Int = otherCfg.Int + 1
 	return nil
 }
 
-var _ Validator = (*testConfigAsValidator)(nil)
+var _ Validator = (*TestConfigAsValidator)(nil)
 
-type testConfigAsValidator struct {
-	testConfig
+type TestConfigAsValidator struct {
+	TestConfig
 }
 
-func (c *testConfigAsValidator) Validate() error {
+func testConfigAsValidatorConstructor() any {
+	return &TestConfigAsValidator{}
+}
+
+func (c *TestConfigAsValidator) Validate() error {
 	if c.Int == 123 {
+		return fmt.Errorf("test validation error")
+	}
+	return nil
+}
+
+var (
+	_ Validator = (*testConfigAsValidatorAndMerger)(nil)
+	_ Merger    = (*testConfigAsValidatorAndMerger)(nil)
+)
+
+type testConfigAsValidatorAndMerger struct {
+	TestConfig
+}
+
+func (c *testConfigAsValidatorAndMerger) Validate() error {
+	if c.Inner.String == "invalid value" {
 		return fmt.Errorf("test error")
 	}
+	return nil
+}
+
+func (c *testConfigAsValidatorAndMerger) Merge(other any) error {
+	otherCfg, ok := other.(*testConfigAsValidatorAndMerger)
+	if !ok {
+		return fmt.Errorf("error converting other config to *testConfigAsValidatorAndMerger")
+	}
+	c.Int = otherCfg.Int + 1
 	return nil
 }
 
@@ -138,7 +153,7 @@ func newTestConfigManager(fields testConfigManagerFields) *ConfigManager {
 func TestConfigManager_merge(t *testing.T) {
 	t.Parallel()
 
-	testConfigStruct := testConfig{}
+	testConfigStruct := TestConfig{}
 	testNonStruct := 1
 	testNonConfigStruct := struct{}{}
 
@@ -188,43 +203,43 @@ func TestConfigManager_merge(t *testing.T) {
 		{
 			name: "src is not a pointer",
 			args: args{
-				dst: &testConfig{
+				dst: &TestConfig{
 					Int: 1,
 				},
-				src: testConfig{
+				src: TestConfig{
 					Int: 2,
 				},
 			},
-			want: &testConfig{
+			want: &TestConfig{
 				Int: 2,
 			},
 		},
 		{
 			name: "single field override",
 			args: args{
-				dst: &testConfig{
+				dst: &TestConfig{
 					Int: 1,
 				},
-				src: &testConfig{
+				src: &TestConfig{
 					Int: 2,
 				},
 			},
-			want: &testConfig{
+			want: &TestConfig{
 				Int: 2,
 			},
 		},
 		{
 			name: "no override by zero value",
 			args: args{
-				dst: &testConfig{
+				dst: &TestConfig{
 					Int:    1,
 					IntPtr: ptr(123),
 				},
-				src: &testConfig{
+				src: &TestConfig{
 					Int: 2,
 				},
 			},
-			want: &testConfig{
+			want: &TestConfig{
 				Int:    2,
 				IntPtr: ptr(123),
 			},
@@ -232,28 +247,28 @@ func TestConfigManager_merge(t *testing.T) {
 		{
 			name: "zero value field override",
 			args: args{
-				dst: &testConfig{},
-				src: &testConfig{
+				dst: &TestConfig{},
+				src: &TestConfig{
 					Int: 2,
 				},
 			},
-			want: &testConfig{
+			want: &TestConfig{
 				Int: 2,
 			},
 		},
 		{
 			name: "multiple fields override",
 			args: args{
-				dst: &testConfig{
+				dst: &TestConfig{
 					Int:    1,
 					IntPtr: ptr(123),
 				},
-				src: &testConfig{
+				src: &TestConfig{
 					Int:    2,
 					IntPtr: ptr(321),
 				},
 			},
-			want: &testConfig{
+			want: &TestConfig{
 				Int:    2,
 				IntPtr: ptr(321),
 			},
@@ -261,19 +276,19 @@ func TestConfigManager_merge(t *testing.T) {
 		{
 			name: "inner struct custom merge",
 			args: args{
-				dst: &testConfig{
+				dst: &TestConfig{
 					Inner: testInnerConfig{
 						Int:    1,
 						String: "str",
 					},
 				},
-				src: &testConfig{
+				src: &TestConfig{
 					Inner: testInnerConfig{
 						Int: 2,
 					},
 				},
 			},
-			want: &testConfig{
+			want: &TestConfig{
 				Inner: testInnerConfig{
 					Int:    2,
 					String: "str",
@@ -283,19 +298,19 @@ func TestConfigManager_merge(t *testing.T) {
 		{
 			name: "inner struct pointer custom merge",
 			args: args{
-				dst: &testConfig{
+				dst: &TestConfig{
 					InnerPtr: &testInnerConfig{
 						Int:    1,
 						String: "str",
 					},
 				},
-				src: &testConfig{
+				src: &TestConfig{
 					InnerPtr: &testInnerConfig{
 						Int: 2,
 					},
 				},
 			},
-			want: &testConfig{
+			want: &TestConfig{
 				InnerPtr: &testInnerConfig{
 					Int:    2,
 					String: "str",
@@ -305,16 +320,16 @@ func TestConfigManager_merge(t *testing.T) {
 		{
 			name: "override inner struct nil pointer",
 			args: args{
-				dst: &testConfig{
+				dst: &TestConfig{
 					InnerPtr: nil,
 				},
-				src: &testConfig{
+				src: &TestConfig{
 					InnerPtr: &testInnerConfig{
 						Int: 2,
 					},
 				},
 			},
-			want: &testConfig{
+			want: &TestConfig{
 				InnerPtr: &testInnerConfig{
 					Int: 2,
 				},
@@ -323,74 +338,72 @@ func TestConfigManager_merge(t *testing.T) {
 		{
 			name: "override inner map",
 			args: args{
-				dst: &testConfig{
+				dst: &TestConfig{
 					Map: map[string]string{"foo": "bar", "the_one": "to_replace"},
 				},
-				src: &testConfig{
+				src: &TestConfig{
 					Map: map[string]string{"the_one": "with_updated_value"},
 				},
 			},
-			want: &testConfig{
+			want: &TestConfig{
 				Map: map[string]string{"foo": "bar", "the_one": "with_updated_value"},
 			},
 		},
 		{
 			name: "no override by zero map",
 			args: args{
-				dst: &testConfig{
+				dst: &TestConfig{
 					Map: map[string]string{"foo": "bar", "the_one": "to_replace"},
 				},
-				src: &testConfig{
+				src: &TestConfig{
 					Map: nil,
 				},
 			},
-			want: &testConfig{
+			want: &TestConfig{
 				Map: map[string]string{"foo": "bar", "the_one": "to_replace"},
 			},
 		},
 		{
 			name: "override inner slice",
 			args: args{
-				dst: &testConfig{
+				dst: &TestConfig{
 					Slice: []string{"first", "second"},
 				},
-				src: &testConfig{
+				src: &TestConfig{
 					Slice: []string{"third"},
 				},
 			},
-			want: &testConfig{
+			want: &TestConfig{
 				Slice: []string{"third"},
 			},
 		},
 		{
 			name: "no override by zero slice",
 			args: args{
-				dst: &testConfig{
+				dst: &TestConfig{
 					Slice: []string{"first", "second"},
 				},
-				src: &testConfig{
+				src: &TestConfig{
 					Slice: nil,
 				},
 			},
-			want: &testConfig{
+			want: &TestConfig{
 				Slice: []string{"first", "second"},
 			},
 		},
 		{
 			name: "Merger config",
 			args: args{
-				dst: &testConfigAsMerger{},
-				src: &testConfigAsMerger{testConfig{Int: 1}},
+				dst: &TestConfigAsMerger{},
+				src: &TestConfigAsMerger{TestConfig{Int: 1}},
 			},
-			want: &testConfigAsMerger{testConfig{Int: 2}},
+			want: &TestConfigAsMerger{TestConfig{Int: 2}},
 		},
 		{
 			name: "Merger config with error",
 			args: args{
-				dst: &testConfigAsMerger{},
-				// ConfigManager implementation ensures that merge is called with the same type dst and src,
-				// here we just emulate error returning behaviour
-				src: &testConfig{Int: 1},
+				dst: &TestConfigAsMerger{TestConfig{Int: 123}}, // here we emulate merge error
+				src: &TestConfigAsMerger{TestConfig{Int: 122}},
 			},
 			wantError: true,
 		},
@@ -427,14 +440,14 @@ func TestConfigManager_validate(t *testing.T) {
 		{
 			name: "non validator config",
 			args: args{
-				config: &testConfig{Int: 123},
+				config: &TestConfig{Int: 123},
 			},
 			wantError: false,
 		},
 		{
 			name: "validator config",
 			args: args{
-				config: &testConfigAsValidator{testConfig{Int: 123}},
+				config: &TestConfigAsValidator{TestConfig{Int: 123}},
 			},
 			wantError: true,
 		},
@@ -446,7 +459,7 @@ func TestConfigManager_validate(t *testing.T) {
 				}},
 			},
 			args: args{
-				config: &testConfig{Int: 123},
+				config: &TestConfig{Int: 123},
 			},
 			wantError: true,
 		},
@@ -458,7 +471,7 @@ func TestConfigManager_validate(t *testing.T) {
 				}},
 			},
 			args: args{
-				config: &testConfig{Int: 123},
+				config: &TestConfig{Int: 123},
 			},
 
 			wantError: true,
@@ -491,18 +504,18 @@ func TestConfigManager_reload(t *testing.T) {
 		{
 			name: "multiple loaders success",
 			fields: testConfigManagerFields{
-				constructor: func() any { return new(testConfig) },
+				constructor: func() any { return new(TestConfig) },
 				loaders: []Loader{
 					{Source: &fakeSource{data: []byte(`{"int": 1}`)}, Formatter: NewJSONFormatter()},
 					{Source: &fakeSource{data: []byte(`{"inner": {"string": "str"}}`)}, Formatter: NewJSONFormatter()},
 				},
 			},
-			wantConfig: &testConfig{Int: 1, Inner: testInnerConfig{String: "str"}},
+			wantConfig: &TestConfig{Int: 1, Inner: testInnerConfig{String: "str"}},
 		},
 		{
 			name: "read error",
 			fields: testConfigManagerFields{
-				constructor: func() any { return new(testConfig) },
+				constructor: func() any { return new(TestConfig) },
 				loaders: []Loader{
 					{Source: &fakeSource{err: fmt.Errorf("test error")}, Formatter: NewJSONFormatter()},
 				},
@@ -512,7 +525,7 @@ func TestConfigManager_reload(t *testing.T) {
 		{
 			name: "unmarshal error",
 			fields: testConfigManagerFields{
-				constructor: func() any { return new(testConfig) },
+				constructor: func() any { return new(TestConfig) },
 				loaders: []Loader{
 					{Source: &fakeSource{data: []byte(`{"int": 1}`)}, Formatter: &fakeFormatter{err: fmt.Errorf("test error")}},
 				},
@@ -522,7 +535,7 @@ func TestConfigManager_reload(t *testing.T) {
 		{
 			name: "validate error",
 			fields: testConfigManagerFields{
-				constructor: func() any { return new(testConfig) },
+				constructor: func() any { return new(TestConfig) },
 				loaders: []Loader{
 					{Source: &fakeSource{data: []byte(`{"int": 1}`)}, Formatter: NewJSONFormatter()},
 				},
@@ -568,7 +581,7 @@ func TestConfigManager_validatePreRunState(t *testing.T) {
 		{
 			name: "constructor returns non ptr value",
 			fields: testConfigManagerFields{
-				constructor: func() any { return testConfig{} },
+				constructor: func() any { return TestConfig{} },
 			},
 			wantErr: true,
 		},
@@ -582,14 +595,14 @@ func TestConfigManager_validatePreRunState(t *testing.T) {
 		{
 			name: "constructor returns non zero struct",
 			fields: testConfigManagerFields{
-				constructor: func() any { return &testConfig{Int: 1, Inner: testInnerConfig{String: "test"}} },
+				constructor: func() any { return &TestConfig{Int: 1, Inner: testInnerConfig{String: "test"}} },
 			},
 			wantErr: true,
 		},
 		{
 			name: "positional validator is nil",
 			fields: testConfigManagerFields{
-				constructor: func() any { return &testConfig{} },
+				constructor: testConfigConstructor,
 				validators:  []ValidateFunc{nil},
 			},
 			wantErr: true,
@@ -597,7 +610,7 @@ func TestConfigManager_validatePreRunState(t *testing.T) {
 		{
 			name: "named validator is nil",
 			fields: testConfigManagerFields{
-				constructor:     func() any { return &testConfig{} },
+				constructor:     testConfigConstructor,
 				namedValidators: map[string]ValidateFunc{"test": nil},
 			},
 			wantErr: true,
@@ -605,7 +618,7 @@ func TestConfigManager_validatePreRunState(t *testing.T) {
 		{
 			name: "no loaders configured",
 			fields: testConfigManagerFields{
-				constructor: func() any { return &testConfig{} },
+				constructor: testConfigConstructor,
 				loaders:     []Loader{},
 			},
 			wantErr: true,
@@ -613,7 +626,7 @@ func TestConfigManager_validatePreRunState(t *testing.T) {
 		{
 			name: "loader with nil source",
 			fields: testConfigManagerFields{
-				constructor: func() any { return &testConfig{} },
+				constructor: testConfigConstructor,
 				loaders:     []Loader{{Source: nil}},
 			},
 			wantErr: true,
@@ -621,7 +634,7 @@ func TestConfigManager_validatePreRunState(t *testing.T) {
 		{
 			name: "loader with nil formatter",
 			fields: testConfigManagerFields{
-				constructor: func() any { return &testConfig{} },
+				constructor: testConfigConstructor,
 				loaders:     []Loader{{Source: &fakeSource{}, Formatter: nil}},
 			},
 			wantErr: true,
@@ -629,7 +642,7 @@ func TestConfigManager_validatePreRunState(t *testing.T) {
 		{
 			name: "valid",
 			fields: testConfigManagerFields{
-				constructor:     func() any { return &testConfig{} },
+				constructor:     testConfigConstructor,
 				loaders:         []Loader{{Source: &fakeSource{}, Formatter: &fakeFormatter{}}},
 				validators:      []ValidateFunc{func() error { return nil }},
 				namedValidators: map[string]ValidateFunc{"test": func() error { return nil }},
@@ -654,15 +667,15 @@ func TestConfigManager_runWatchers_RegisterOnlyNonNilWatchers(t *testing.T) {
 
 	events := make(chan string, 3)
 
-	watcher1 := &fakeWatcher{}
-	watcher2 := &fakeWatcher{}
+	watcher1 := NewTriggerWatcher()
+	watcher2 := NewTriggerWatcher()
 
 	cm := newTestConfigManager(testConfigManagerFields{
-		constructor: func() any { return &testConfig{} },
+		constructor: testConfigConstructor,
 		loaders: []Loader{
 			{
 				Source:    &fakeSource{data: []byte("test")},
-				Formatter: &fakeFormatter{data: testConfig{Int: 1}},
+				Formatter: &fakeFormatter{data: TestConfig{Int: 1}},
 				Watcher:   watcher1,
 				OnUpdateSuccess: func() {
 					events <- "A:success"
@@ -673,7 +686,7 @@ func TestConfigManager_runWatchers_RegisterOnlyNonNilWatchers(t *testing.T) {
 			},
 			{
 				Source:    &fakeSource{data: []byte("test")},
-				Formatter: &fakeFormatter{data: testConfig{Int: 1}},
+				Formatter: &fakeFormatter{data: TestConfig{Int: 1}},
 				Watcher:   watcher2,
 				OnUpdateSuccess: func() {
 					events <- "B:success"
@@ -684,7 +697,7 @@ func TestConfigManager_runWatchers_RegisterOnlyNonNilWatchers(t *testing.T) {
 			},
 			{
 				Source:    &fakeSource{data: []byte("test")},
-				Formatter: &fakeFormatter{data: testConfig{Int: 1}},
+				Formatter: &fakeFormatter{data: TestConfig{Int: 1}},
 				Watcher:   nil, // must be ignored
 				OnUpdateSuccess: func() {
 					events <- "C:success"
@@ -698,10 +711,10 @@ func TestConfigManager_runWatchers_RegisterOnlyNonNilWatchers(t *testing.T) {
 
 	cm.runWatchers()
 
-	if watcher1.cb == nil {
+	if watcher1.callback == nil {
 		t.Fatalf("watcher #1 did not get a callback")
 	}
-	if watcher2.cb == nil {
+	if watcher2.callback == nil {
 		t.Fatalf("watcher #2 did not get a callback")
 	}
 
@@ -730,13 +743,13 @@ func TestConfigManager_runWatchers_CallbackMayBeTriggeredMultipleTimes(t *testin
 
 	events := make(chan string, 2)
 
-	watcher := &fakeWatcher{}
+	watcher := NewTriggerWatcher()
 	cm := &ConfigManager{
-		constructor: func() any { return &testConfig{} },
+		constructor: testConfigConstructor,
 		loaders: []Loader{
 			{
 				Source:    &fakeSource{data: []byte("test")},
-				Formatter: &fakeFormatter{data: testConfig{Int: 1}},
+				Formatter: &fakeFormatter{data: TestConfig{Int: 1}},
 				Watcher:   watcher,
 				OnUpdateSuccess: func() {
 					events <- "X:success"
@@ -750,7 +763,7 @@ func TestConfigManager_runWatchers_CallbackMayBeTriggeredMultipleTimes(t *testin
 
 	cm.runWatchers()
 
-	if watcher.cb == nil {
+	if watcher.callback == nil {
 		t.Fatalf("watcher did not get a callback")
 	}
 
@@ -772,13 +785,13 @@ func TestConfigManager_runWatchers_CallbackMayBeTriggeredMultipleTimes(t *testin
 func TestConfigManager_runWatchers_NoPanicsIfCallbacksNil(t *testing.T) {
 	t.Parallel()
 
-	watcher := &fakeWatcher{}
+	watcher := NewTriggerWatcher()
 	cm := &ConfigManager{
-		constructor: func() any { return &testConfig{} },
+		constructor: testConfigConstructor,
 		loaders: []Loader{
 			{
 				Source:          &fakeSource{data: []byte("test")},
-				Formatter:       &fakeFormatter{data: testConfig{Int: 1}},
+				Formatter:       &fakeFormatter{data: TestConfig{Int: 1}},
 				Watcher:         watcher,
 				OnUpdateSuccess: nil,
 				OnUpdateError:   nil,
@@ -788,7 +801,7 @@ func TestConfigManager_runWatchers_NoPanicsIfCallbacksNil(t *testing.T) {
 
 	cm.runWatchers()
 
-	if watcher.cb == nil {
+	if watcher.callback == nil {
 		t.Fatalf("watcher did not get a callback")
 	}
 
@@ -798,4 +811,360 @@ func TestConfigManager_runWatchers_NoPanicsIfCallbacksNil(t *testing.T) {
 		}
 	}()
 	watcher.Trigger()
+}
+
+func TestConfigManager_New(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		options []Option
+		wantErr bool
+	}{
+		{
+			name:    "no options",
+			options: []Option{},
+			wantErr: false,
+		},
+		{
+			name:    "nil options",
+			options: []Option{},
+			wantErr: false,
+		},
+		{
+			name:    "with validator",
+			options: []Option{WithValidator(func() error { return fmt.Errorf("test error") })},
+			wantErr: false,
+		},
+		{
+			name:    "with named validator",
+			options: []Option{WithNamedValidator("test", func() error { return fmt.Errorf("test error") })},
+			wantErr: false,
+		},
+		{
+			name:    "with env",
+			options: []Option{WithEnv},
+			wantErr: false,
+		},
+		{
+			name:    "with json file",
+			options: []Option{WithJSONFile("test_file.json", nil)},
+			wantErr: false,
+		},
+		{
+			name:    "with dynamic json file",
+			options: []Option{WithDynamicJSONFile("test_file.json", nil, nil, nil)},
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if _, err := NewConfigManagerFor[TestConfig](tt.options...); (err != nil) != tt.wantErr {
+				t.Fatalf("NewConfigManager() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+//nolint:cyclop
+func TestConfigManager_Start_Static(t *testing.T) {
+	type args struct {
+		constructor ConstructorFunc
+		options     []Option
+	}
+	tests := []struct {
+		name    string
+		args    args
+		setup   func(t *testing.T)
+		wantErr bool
+		want    any
+	}{
+		{
+			name: "no options",
+			args: args{
+				constructor: testConfigConstructor,
+				options:     []Option{},
+			},
+			wantErr: true,
+		},
+		{
+			name: "json file does not exist",
+			args: args{
+				constructor: testConfigConstructor,
+				options:     []Option{WithJSONFile("test_config.json")},
+			},
+			wantErr: true,
+		},
+		{
+			name: "json file exits",
+			args: args{
+				constructor: testConfigConstructor,
+				options:     []Option{WithJSONFile("test_config.json")},
+			},
+			setup: func(t *testing.T) {
+				t.Helper()
+				cleanup, err := setupJSONConfig("test_config.json", map[string]any{"int": 123})
+				if err != nil {
+					t.Fatalf("failed to setup json config: %v", err)
+				}
+				t.Cleanup(cleanup)
+			},
+			wantErr: false,
+			want:    &TestConfig{Int: 123},
+		},
+		{
+			name: "with env",
+			args: args{
+				constructor: testConfigConstructor,
+				options:     []Option{WithEnv},
+			},
+			setup: func(t *testing.T) {
+				t.Helper()
+				t.Setenv("INT", "123")
+			},
+			wantErr: false,
+			want:    &TestConfig{Int: 123},
+		},
+		{
+			name: "with multiple loaders",
+			args: args{
+				constructor: testConfigConstructor,
+				options:     []Option{WithJSONFile("test_config.json"), WithEnv},
+			},
+			setup: func(t *testing.T) {
+				t.Helper()
+				cleanup, err := setupJSONConfig("test_config.json", map[string]any{"int": 10})
+				if err != nil {
+					t.Fatalf("failed to setup json config: %v", err)
+				}
+				t.Cleanup(cleanup)
+				t.Setenv("INT", "1")
+			},
+			wantErr: false,
+			want:    &TestConfig{Int: 1},
+		},
+		{
+			name: "with multiple loaders and custom merge",
+			args: args{
+				constructor: testConfigAsMergerConstructor,
+				options:     []Option{WithJSONFile("test_config.json"), WithEnv},
+			},
+			setup: func(t *testing.T) {
+				t.Helper()
+				cleanup, err := setupJSONConfig("test_config.json", map[string]any{"int": 10})
+				if err != nil {
+					t.Fatalf("failed to setup json config: %v", err)
+				}
+				t.Cleanup(cleanup)
+				t.Setenv("INT", "1")
+			},
+			wantErr: false,
+			want:    &TestConfigAsMerger{TestConfig{Int: 2}},
+		},
+		{
+			name: "with multiple loaders and custom merge error",
+			args: args{
+				constructor: testConfigAsMergerConstructor,
+				options:     []Option{WithJSONFile("test_config.json"), WithEnv},
+			},
+			setup: func(t *testing.T) {
+				t.Helper()
+				cleanup, err := setupJSONConfig("test_config.json", map[string]any{"int": 122})
+				if err != nil {
+					t.Fatalf("failed to setup json config: %v", err)
+				}
+				t.Cleanup(cleanup)
+				t.Setenv("INT", "1")
+			},
+			wantErr: true,
+			want:    &TestConfigAsMerger{TestConfig{Int: 2}},
+		},
+		{
+			name: "with config validation success",
+			args: args{
+				constructor: testConfigAsValidatorConstructor,
+				options:     []Option{WithEnv},
+			},
+			setup: func(t *testing.T) {
+				t.Helper()
+				t.Setenv("INT", "122")
+			},
+			wantErr: false,
+			want:    &TestConfigAsValidator{TestConfig{Int: 122}},
+		},
+		{
+			name: "with config validation error",
+			args: args{
+				constructor: testConfigAsValidatorConstructor,
+				options:     []Option{WithEnv},
+			},
+			setup: func(t *testing.T) {
+				t.Helper()
+				t.Setenv("INT", "123")
+			},
+			wantErr: true,
+		},
+		{
+			name: "with custom validator success",
+			args: args{
+				constructor: testConfigConstructor,
+				options:     []Option{WithEnv, WithValidator(func() error { return nil })},
+			},
+			setup: func(t *testing.T) {
+				t.Helper()
+				t.Setenv("INT", "123")
+			},
+			wantErr: false,
+			want:    &TestConfig{Int: 123},
+		},
+		{
+			name: "with custom validator error",
+			args: args{
+				constructor: testConfigConstructor,
+				options:     []Option{WithEnv, WithValidator(func() error { return fmt.Errorf("error") })},
+			},
+			setup: func(t *testing.T) {
+				t.Helper()
+				t.Setenv("INT", "123")
+			},
+			wantErr: true,
+		},
+		{
+			name: "with custom named validator success",
+			args: args{
+				constructor: testConfigConstructor,
+				options:     []Option{WithEnv, WithNamedValidator("test", func() error { return nil })},
+			},
+			setup: func(t *testing.T) {
+				t.Helper()
+				t.Setenv("INT", "123")
+			},
+			wantErr: false,
+			want:    &TestConfig{Int: 123},
+		},
+		{
+			name: "with custom validator error",
+			args: args{
+				constructor: testConfigConstructor,
+				options:     []Option{WithEnv, WithNamedValidator("test", func() error { return fmt.Errorf("error") })},
+			},
+			setup: func(t *testing.T) {
+				t.Helper()
+				t.Setenv("INT", "123")
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.setup != nil {
+				tt.setup(t)
+			}
+
+			cm, err := NewConfigManager(tt.args.constructor, tt.args.options...)
+			if err != nil {
+				t.Fatalf("NewConfigManager() error = %v, wantErr %v", err, false)
+			}
+			defer func() {
+				if err := cm.Stop(); err != nil {
+					t.Fatalf("Stop() error = %v, wantErr %v", err, false)
+				}
+			}()
+			if err := cm.Start(); (err != nil) != tt.wantErr {
+				t.Fatalf("Start() error = %v, wantErr %v", err, tt.wantErr)
+			} else if tt.wantErr {
+				return
+			}
+
+			cfg := cm.Config()
+			if !reflect.DeepEqual(cfg, tt.want) {
+				t.Fatalf("Start() got = %v, want %v", cfg, tt.want)
+			}
+		})
+	}
+}
+
+//nolint:cyclop
+func TestConfigManager_Start_DynamicUpdate(t *testing.T) {
+	testFile := "test_dynamic_config.json"
+
+	cleanup, err := setupJSONConfig(testFile, map[string]any{"int": 10})
+	if err != nil {
+		t.Fatalf("failed to setup json config: %v", err)
+	}
+	t.Cleanup(cleanup)
+
+	cm, err := NewConfigManagerFor[TestConfig]()
+	if err != nil {
+		t.Fatalf("NewConfigManagerFor[TestConfig]() error = %v, wantErr %v", err, false)
+	}
+
+	var successCalled, errorCalled bool
+	watcher := NewTriggerWatcher()
+	cm.AddLoader(Loader{
+		Source:    NewFileSource(testFile),
+		Formatter: NewJSONFormatter(),
+		Watcher:   watcher,
+		OnUpdateSuccess: func() {
+			successCalled = true
+		},
+		OnUpdateError: func(_ error) {
+			errorCalled = true
+		},
+	})
+
+	defer func() {
+		if err := cm.Stop(); err != nil {
+			t.Fatalf("Stop() error = %v, wantErr %v", err, false)
+		}
+	}()
+	if err := cm.Start(); err != nil {
+		t.Fatalf("Start() error = %v, wantErr %v", err, false)
+	}
+
+	cfg1 := cm.Config()
+	want1 := &TestConfig{Int: 10}
+	if !reflect.DeepEqual(cfg1, want1) {
+		t.Fatalf("Config() got = %v, want %v", cfg1, want1)
+	}
+	if successCalled {
+		t.Fatalf("Unexpected call of OnUpdateSuccess")
+	}
+	if errorCalled {
+		t.Fatalf("Unexpected call of OnUpdateError")
+	}
+
+	if err := updateJSONFile(testFile, map[string]any{"int": 20}); err != nil {
+		t.Fatalf("failed to update json config: %v", err)
+	}
+	watcher.Trigger()
+
+	cfg2 := cm.Config()
+	want2 := &TestConfig{Int: 20}
+	if !reflect.DeepEqual(cfg2, want2) {
+		t.Fatalf("Config() got = %v, want %v", cfg2, want2)
+	}
+	if !successCalled {
+		t.Fatalf("OnUpdateSuccess was not called")
+	}
+	if errorCalled {
+		t.Fatalf("Unexpected call of OnUpdateError")
+	}
+	successCalled = false
+
+	cleanup()
+	watcher.Trigger()
+
+	cfg3 := cm.Config()
+	if !reflect.DeepEqual(cfg3, want2) {
+		t.Fatalf("Config() got = %v, want %v", cfg3, want2)
+	}
+	if successCalled {
+		t.Fatalf("Unexpected call of OnUpdateSuccess")
+	}
+	if !errorCalled {
+		t.Fatalf("OnUpdateError was not called")
+	}
 }

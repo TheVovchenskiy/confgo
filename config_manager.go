@@ -102,12 +102,20 @@ type Option func(cm *ConfigManager) error
 // Note that constructor must return pointer to an empty struct.
 func NewConfigManager(constructor ConstructorFunc, opts ...Option) (*ConfigManager, error) {
 	cm := &ConfigManager{
-		constructor: constructor,
+		constructor:     constructor,
+		loaders:         make([]Loader, 0),
+		validators:      make([]ValidateFunc, 0),
+		namedValidators: make(map[string]ValidateFunc),
+		isRunning:       atomic.Bool{},
+		current:         nil,
+		mu:              sync.RWMutex{},
 	}
 
 	for _, opt := range opts {
-		if err := opt(cm); err != nil {
-			return nil, err
+		if opt != nil {
+			if err := opt(cm); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -215,6 +223,7 @@ func (cm *ConfigManager) validate(config any) error {
 }
 
 func (cm *ConfigManager) reload() error {
+	// We can probably optimize here by merging only those configs which were updated.
 	merged := cm.constructor()
 	for _, l := range cm.loaders {
 		data, err := l.Source.Read()

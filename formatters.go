@@ -47,15 +47,43 @@ func (ef *EnvFormatter) Unmarshal(data []byte, v any) error {
 	})
 }
 
+// JSONFormatterOption option that configures json decoder.
+type JSONFormatterOption func(jf *JSONFormatter)
+
+// DisallowUnknownFields causes the json.Decoder to return an error when the
+// destination is a struct and the input contains object keys which do not match
+// any non-ignored, exported fields in the destination.
+func DisallowUnknownFields(jf *JSONFormatter) {
+	jf.decoderTweaks = append(jf.decoderTweaks, func(decoder *json.Decoder) { decoder.DisallowUnknownFields() })
+}
+
+// UseNumber causes the json.Decoder to unmarshal a number into an interface
+// value as a json.Number instead of as a float64.
+func UseNumber(jf *JSONFormatter) {
+	jf.decoderTweaks = append(jf.decoderTweaks, func(decoder *json.Decoder) { decoder.UseNumber() })
+}
+
 var _ Formatter = (*JSONFormatter)(nil)
 
 // JSONFormatter is a simple json formatter used to parse raw json data via the standard json package.
-type JSONFormatter struct{}
+type JSONFormatter struct {
+	decoderTweaks []func(*json.Decoder)
+}
 
-func NewJSONFormatter() *JSONFormatter {
-	return &JSONFormatter{}
+func NewJSONFormatter(opts ...JSONFormatterOption) *JSONFormatter {
+	jsonF := &JSONFormatter{}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(jsonF)
+		}
+	}
+	return jsonF
 }
 
 func (jf *JSONFormatter) Unmarshal(data []byte, v any) error {
-	return json.Unmarshal(data, v)
+	dec := json.NewDecoder(bytes.NewReader(data))
+	for _, tweak := range jf.decoderTweaks {
+		tweak(dec)
+	}
+	return dec.Decode(v)
 }
