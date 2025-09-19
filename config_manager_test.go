@@ -122,7 +122,7 @@ type testConfigManagerFields struct {
 	loaders         []Loader
 	validators      []ValidateFunc
 	namedValidators map[string]ValidateFunc
-	//mu            sync.RWMutex
+	// mu            sync.RWMutex
 }
 
 func newTestConfigManager(fields testConfigManagerFields) *ConfigManager {
@@ -136,6 +136,8 @@ func newTestConfigManager(fields testConfigManagerFields) *ConfigManager {
 }
 
 func TestConfigManager_merge(t *testing.T) {
+	t.Parallel()
+
 	testConfigStruct := testConfig{}
 	testNonStruct := 1
 	testNonConfigStruct := struct{}{}
@@ -395,6 +397,8 @@ func TestConfigManager_merge(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			cm := newTestConfigManager(tt.fields)
 			gotErr := cm.merge(tt.args.dst, tt.args.src)
 			if tt.wantError {
@@ -409,6 +413,8 @@ func TestConfigManager_merge(t *testing.T) {
 }
 
 func TestConfigManager_validate(t *testing.T) {
+	t.Parallel()
+
 	type args struct {
 		config any
 	}
@@ -460,6 +466,8 @@ func TestConfigManager_validate(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			cm := newTestConfigManager(tt.fields)
 			gotErr := cm.validate(tt.args.config)
 			if tt.wantError {
@@ -472,6 +480,8 @@ func TestConfigManager_validate(t *testing.T) {
 }
 
 func TestConfigManager_reload(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		fields     testConfigManagerFields
@@ -523,6 +533,8 @@ func TestConfigManager_reload(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			cm := newTestConfigManager(tt.fields)
 			if err := cm.reload(); (err != nil) != tt.wantErr {
 				t.Fatalf("reload() error = %v, wantErr %v", err, tt.wantErr)
@@ -539,6 +551,8 @@ func TestConfigManager_reload(t *testing.T) {
 }
 
 func TestConfigManager_validatePreRunState(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		fields  testConfigManagerFields
@@ -625,6 +639,8 @@ func TestConfigManager_validatePreRunState(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			cm := newTestConfigManager(tt.fields)
 			if err := cm.validatePreRunState(); (err != nil) != tt.wantErr {
 				t.Errorf("validatePreRunState() error = %v, wantErr %v", err, tt.wantErr)
@@ -634,10 +650,12 @@ func TestConfigManager_validatePreRunState(t *testing.T) {
 }
 
 func TestConfigManager_runWatchers_RegisterOnlyNonNilWatchers(t *testing.T) {
+	t.Parallel()
+
 	events := make(chan string, 3)
 
-	w1 := &fakeWatcher{}
-	w2 := &fakeWatcher{}
+	watcher1 := &fakeWatcher{}
+	watcher2 := &fakeWatcher{}
 
 	cm := newTestConfigManager(testConfigManagerFields{
 		constructor: func() any { return &testConfig{} },
@@ -645,22 +663,22 @@ func TestConfigManager_runWatchers_RegisterOnlyNonNilWatchers(t *testing.T) {
 			{
 				Source:    &fakeSource{data: []byte("test")},
 				Formatter: &fakeFormatter{data: testConfig{Int: 1}},
-				Watcher:   w1,
+				Watcher:   watcher1,
 				OnUpdateSuccess: func() {
 					events <- "A:success"
 				},
-				OnUpdateError: func(err error) {
+				OnUpdateError: func(_ error) {
 					events <- "A:error"
 				},
 			},
 			{
 				Source:    &fakeSource{data: []byte("test")},
 				Formatter: &fakeFormatter{data: testConfig{Int: 1}},
-				Watcher:   w2,
+				Watcher:   watcher2,
 				OnUpdateSuccess: func() {
 					events <- "B:success"
 				},
-				OnUpdateError: func(err error) {
+				OnUpdateError: func(_ error) {
 					events <- "B:error"
 				},
 			},
@@ -671,7 +689,7 @@ func TestConfigManager_runWatchers_RegisterOnlyNonNilWatchers(t *testing.T) {
 				OnUpdateSuccess: func() {
 					events <- "C:success"
 				},
-				OnUpdateError: func(err error) {
+				OnUpdateError: func(_ error) {
 					events <- "C:error"
 				},
 			},
@@ -680,20 +698,20 @@ func TestConfigManager_runWatchers_RegisterOnlyNonNilWatchers(t *testing.T) {
 
 	cm.runWatchers()
 
-	if w1.cb == nil {
+	if watcher1.cb == nil {
 		t.Fatalf("watcher #1 did not get a callback")
 	}
-	if w2.cb == nil {
+	if watcher2.cb == nil {
 		t.Fatalf("watcher #2 did not get a callback")
 	}
 
-	w1.Trigger()
+	watcher1.Trigger()
 	got := <-events
 	if !strings.HasPrefix(got, "A:") {
 		t.Fatalf("expected event from loader A, got %q", got)
 	}
 
-	w2.Trigger()
+	watcher2.Trigger()
 	got = <-events
 	if !strings.HasPrefix(got, "B:") {
 		t.Fatalf("expected event from loader B, got %q", got)
@@ -712,18 +730,18 @@ func TestConfigManager_runWatchers_CallbackMayBeTriggeredMultipleTimes(t *testin
 
 	events := make(chan string, 2)
 
-	w := &fakeWatcher{}
+	watcher := &fakeWatcher{}
 	cm := &ConfigManager{
 		constructor: func() any { return &testConfig{} },
 		loaders: []Loader{
 			{
 				Source:    &fakeSource{data: []byte("test")},
 				Formatter: &fakeFormatter{data: testConfig{Int: 1}},
-				Watcher:   w,
+				Watcher:   watcher,
 				OnUpdateSuccess: func() {
 					events <- "X:success"
 				},
-				OnUpdateError: func(err error) {
+				OnUpdateError: func(_ error) {
 					events <- "X:error"
 				},
 			},
@@ -732,14 +750,14 @@ func TestConfigManager_runWatchers_CallbackMayBeTriggeredMultipleTimes(t *testin
 
 	cm.runWatchers()
 
-	if w.cb == nil {
+	if watcher.cb == nil {
 		t.Fatalf("watcher did not get a callback")
 	}
 
-	w.Trigger()
-	w.Trigger()
+	watcher.Trigger()
+	watcher.Trigger()
 
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		select {
 		case got := <-events:
 			if !strings.HasPrefix(got, "X:") {
@@ -754,14 +772,14 @@ func TestConfigManager_runWatchers_CallbackMayBeTriggeredMultipleTimes(t *testin
 func TestConfigManager_runWatchers_NoPanicsIfCallbacksNil(t *testing.T) {
 	t.Parallel()
 
-	w := &fakeWatcher{}
+	watcher := &fakeWatcher{}
 	cm := &ConfigManager{
 		constructor: func() any { return &testConfig{} },
 		loaders: []Loader{
 			{
 				Source:          &fakeSource{data: []byte("test")},
 				Formatter:       &fakeFormatter{data: testConfig{Int: 1}},
-				Watcher:         w,
+				Watcher:         watcher,
 				OnUpdateSuccess: nil,
 				OnUpdateError:   nil,
 			},
@@ -770,7 +788,7 @@ func TestConfigManager_runWatchers_NoPanicsIfCallbacksNil(t *testing.T) {
 
 	cm.runWatchers()
 
-	if w.cb == nil {
+	if watcher.cb == nil {
 		t.Fatalf("watcher did not get a callback")
 	}
 
@@ -779,5 +797,5 @@ func TestConfigManager_runWatchers_NoPanicsIfCallbacksNil(t *testing.T) {
 			t.Fatalf("callback panicked: %v", r)
 		}
 	}()
-	w.Trigger()
+	watcher.Trigger()
 }

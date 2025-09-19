@@ -23,8 +23,10 @@ func (es *EnvSource) Read() ([]byte, error) {
 	return stringsToBytes(os.Environ()), nil
 }
 
-var _ Source = (*FileSource)(nil)
-var _ ModTimer = (*FileSource)(nil)
+var (
+	_ Source   = (*FileSource)(nil)
+	_ ModTimer = (*FileSource)(nil)
+)
 
 // FileSource is a configuration source that reads from a file.
 type FileSource struct {

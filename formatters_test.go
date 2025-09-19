@@ -6,6 +6,8 @@ import (
 )
 
 func TestEnvFormatter_parseRawIntoMap(t *testing.T) {
+	t.Parallel()
+
 	type args struct {
 		raw []byte
 	}
@@ -66,6 +68,8 @@ func TestEnvFormatter_parseRawIntoMap(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			ef := &EnvFormatter{}
 			if got := ef.parseRawIntoMap(tt.args.raw); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("parseRawIntoMap() = %v, want %v", got, tt.want)

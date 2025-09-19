@@ -70,10 +70,10 @@ type Loader struct {
 
 func (l *Loader) validate() error {
 	if l.Source == nil {
-		return fmt.Errorf("source is nil")
+		return ErrSourceIsNil
 	}
 	if l.Formatter == nil {
-		return fmt.Errorf("formatter is nil")
+		return ErrFormatterIsNil
 	}
 	return nil
 }
@@ -120,36 +120,43 @@ func NewConfigManagerFor[T any](opts ...Option) (*ConfigManager, error) {
 	return NewConfigManager(func() any { return new(T) }, opts...)
 }
 
-func (cm *ConfigManager) validatePreRunState() error {
+func (cm *ConfigManager) validateConstructor() error {
 	if cm.constructor == nil {
-		return fmt.Errorf("constructor is nil")
+		return ErrConstructorIsNil
 	}
 	cfg := cm.constructor()
 	cfgVal := reflect.ValueOf(cfg)
 	if cfgVal.Kind() != reflect.Ptr || cfgVal.Elem().Kind() != reflect.Struct {
-		return fmt.Errorf("constructor must return pointer to a struct")
+		return ErrConstructorMustBePointer
 	}
 	if !cfgVal.Elem().IsZero() {
-		return fmt.Errorf("constructor must return zero (empty) config")
+		return ErrConstructorMustReturnZeroStruct
+	}
+	return nil
+}
+
+func (cm *ConfigManager) validatePreRunState() error {
+	if err := cm.validateConstructor(); err != nil {
+		return fmt.Errorf("validate constructor: %w", err)
 	}
 
 	for name, v := range cm.namedValidators {
 		if v == nil {
-			return fmt.Errorf("named validator %q is nil", name)
+			return fmt.Errorf("validator %q: %w", name, ErrValidatorIsNil)
 		}
 	}
 	for i, v := range cm.validators {
 		if v == nil {
-			return fmt.Errorf("validator[%d] is nil", i)
+			return fmt.Errorf("validator #%d: %w", i, ErrValidatorIsNil)
 		}
 	}
 
 	if len(cm.loaders) == 0 {
-		return fmt.Errorf("no loaders defined")
+		return ErrNoLoadersDefined
 	}
 	for i, l := range cm.loaders {
 		if err := l.validate(); err != nil {
-			return fmt.Errorf("loader[%d]: %w", i, err)
+			return fmt.Errorf("loader #%d: %w", i, err)
 		}
 	}
 

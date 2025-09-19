@@ -19,31 +19,33 @@ type mockModTimer struct {
 func (m *mockModTimer) ModTime() (time.Time, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	var t time.Time
+	var modTime time.Time
 	if m.callCount >= len(m.times) {
-		t = m.times[len(m.times)-1]
+		modTime = m.times[len(m.times)-1]
 	} else {
-		t = m.times[m.callCount]
+		modTime = m.times[m.callCount]
 	}
 	var err error
 	if m.callCount < len(m.errs) && m.errs[m.callCount] != nil {
 		err = m.errs[m.callCount]
 	}
 	m.callCount++
-	return t, err
+	return modTime, err
 }
 
 func Test_ModTimeWatcher_NoCallbackOnInitialModTime(t *testing.T) {
+	t.Parallel()
+
 	now := time.Now()
 	mt := &mockModTimer{
 		times: []time.Time{now},
 	}
-	w := NewModTimeWatcher(mt)
-	w.interval = 10 * time.Millisecond
+	watcher := NewModTimeWatcher(mt)
+	watcher.interval = 10 * time.Millisecond
 
 	var calls int
 	done := make(chan struct{})
-	w.Watch(func() {
+	watcher.Watch(func() {
 		calls++
 		close(done)
 	})
@@ -55,13 +57,15 @@ func Test_ModTimeWatcher_NoCallbackOnInitialModTime(t *testing.T) {
 		// ok
 		close(done)
 	}
-	if err := w.Stop(); err != nil {
+	if err := watcher.Stop(); err != nil {
 		t.Errorf("Unexpected error while stopping watcher: %v", err)
 	}
 }
 
 func Test_ModTimeWatcher_CallbackOnModTimeIncrease(t *testing.T) {
-	mt := &mockModTimer{
+	t.Parallel()
+
+	mock := &mockModTimer{
 		times: []time.Time{
 			time.Unix(0, 1),   // first check (lastMod is unknown)
 			time.Unix(0, 1),   // no changes
@@ -70,12 +74,12 @@ func Test_ModTimeWatcher_CallbackOnModTimeIncrease(t *testing.T) {
 			time.Unix(102, 0), // has changed
 		},
 	}
-	w := NewModTimeWatcher(mt)
-	w.interval = 10 * time.Millisecond
+	watcher := NewModTimeWatcher(mock)
+	watcher.interval = 10 * time.Millisecond
 
 	var calls int
 	done := make(chan struct{})
-	w.Watch(func() {
+	watcher.Watch(func() {
 		calls++
 		if calls == 2 {
 			close(done)
@@ -88,28 +92,30 @@ func Test_ModTimeWatcher_CallbackOnModTimeIncrease(t *testing.T) {
 	case <-time.After(300 * time.Millisecond):
 		t.Error("callback was not called as expected")
 	}
-	if err := w.Stop(); err != nil {
+	if err := watcher.Stop(); err != nil {
 		t.Errorf("Unexpected error while stopping watcher: %v", err)
 	}
 }
 
 func Test_ModTimeWatcher_NoCallbackWhenNoModTimeChange(t *testing.T) {
+	t.Parallel()
+
 	now := time.Now()
 	mt := &mockModTimer{
 		times: []time.Time{
 			now, now, now, now, now,
 		},
 	}
-	w := NewModTimeWatcher(mt)
-	w.interval = 10 * time.Millisecond
+	watcher := NewModTimeWatcher(mt)
+	watcher.interval = 10 * time.Millisecond
 
 	var calls int
-	w.Watch(func() {
+	watcher.Watch(func() {
 		calls++
 	})
 
 	time.Sleep(60 * time.Millisecond)
-	if err := w.Stop(); err != nil {
+	if err := watcher.Stop(); err != nil {
 		t.Errorf("Unexpected error while stopping watcher: %v", err)
 	}
 	if calls > 1 {
@@ -118,8 +124,10 @@ func Test_ModTimeWatcher_NoCallbackWhenNoModTimeChange(t *testing.T) {
 }
 
 func Test_ModTimeWatcher_IgnoresModTimeErrors(t *testing.T) {
+	t.Parallel()
+
 	now := time.Now()
-	mt := &mockModTimer{
+	mock := &mockModTimer{
 		times: []time.Time{
 			now,
 			now,
@@ -131,11 +139,11 @@ func Test_ModTimeWatcher_IgnoresModTimeErrors(t *testing.T) {
 			nil,
 		},
 	}
-	w := NewModTimeWatcher(mt)
-	w.interval = 10 * time.Millisecond
+	watcher := NewModTimeWatcher(mock)
+	watcher.interval = 10 * time.Millisecond
 
 	call := make(chan struct{})
-	w.Watch(func() {
+	watcher.Watch(func() {
 		close(call)
 	})
 
@@ -145,24 +153,26 @@ func Test_ModTimeWatcher_IgnoresModTimeErrors(t *testing.T) {
 	case <-time.After(200 * time.Millisecond):
 		t.Error("callback was not called after error resolved")
 	}
-	if err := w.Stop(); err != nil {
+	if err := watcher.Stop(); err != nil {
 		t.Errorf("Unexpected error while stopping watcher: %v", err)
 	}
 }
 
 func Test_ModTimeWatcher_Stop(t *testing.T) {
+	t.Parallel()
+
 	mt := &mockModTimer{
 		times: []time.Time{time.Now()},
 	}
-	w := NewModTimeWatcher(mt)
-	w.interval = 10 * time.Millisecond
+	watcher := NewModTimeWatcher(mt)
+	watcher.interval = 10 * time.Millisecond
 
 	var calls int
-	w.Watch(func() {
+	watcher.Watch(func() {
 		calls++
 	})
 
-	err := w.Stop()
+	err := watcher.Stop()
 	if err != nil {
 		t.Fatalf("Stop returned error: %v", err)
 	}

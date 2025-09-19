@@ -7,6 +7,8 @@ import (
 	"github.com/caarlos0/env/v11"
 )
 
+const pairLen = 2
+
 var _ Formatter = (*EnvFormatter)(nil)
 
 // EnvFormatter is a formatter that parses environment variable-style key-value pairs
@@ -25,8 +27,8 @@ func (ef *EnvFormatter) parseRawIntoMap(raw []byte) map[string]string {
 		if len(line) == 0 {
 			continue
 		}
-		pair := bytes.SplitN(line, []byte("="), 2)
-		if len(pair) != 2 {
+		pair := bytes.SplitN(line, []byte("="), pairLen)
+		if len(pair) != pairLen {
 			// This can only happen if the string does not have an equal sign. In this case,
 			// the slice length will be equal to 1. The case where the slice length is 2 is impossible.
 			continue
@@ -41,7 +43,7 @@ func (ef *EnvFormatter) Unmarshal(data []byte, v any) error {
 	// in order to reduce dependencies count
 	return env.ParseWithOptions(v, env.Options{
 		Environment: ef.parseRawIntoMap(data),
-		//Prefix: // Do we need to support this?
+		// Prefix: // Do we need to support this?
 	})
 }
 

@@ -5,3 +5,7 @@ test:
 .PHONY: cover
 cover: test
 	go tool cover -func coverage.out
+
+.PHONY: lint
+lint:
+	golangci-lint run -c golangci.yaml
