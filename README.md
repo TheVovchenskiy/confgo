@@ -37,20 +37,20 @@ anyway.
 
 ```go
 type Config struct {
-Host string `json:"host"`
-Port int    `json:"port"`
+	Host string `json:"host"`
+	Port int    `json:"port"`
 }
 
 func main() {
-cm, err := confgo.NewConfigManagerFor[Config](confgo.WithJSONFile("config.json"))
-if err != nil {
-panic(err)
-}
-cm.MustStart()
-defer cm.MustStop()
+	cm, err := confgo.NewConfigManagerFor[Config](confgo.WithJSONFile("examples/static/config.json"))
+	if err != nil {
+		panic(err)
+	}
+	cm.MustStart()
+	defer cm.MustStop()
 
-fmt.Printf("%#v", cm.Config())
-// &main.Config{Host:"localhost", Port:1234}
+	fmt.Printf("%#v\n", cm.Config())
+	// &main.Config{Host:"localhost", Port:1234}
 }
 ```
 
