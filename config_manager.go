@@ -264,6 +264,13 @@ func (cm *ConfigManager) Start() error {
 	return nil
 }
 
+// MustStart same as Start but panics if any error occurs.
+func (cm *ConfigManager) MustStart() {
+	if err := cm.Start(); err != nil {
+		panic(err)
+	}
+}
+
 // Stop halts the configuration manager and stops all watchers.
 func (cm *ConfigManager) Stop() error {
 	if !cm.isRunning.Load() {
@@ -282,6 +289,13 @@ func (cm *ConfigManager) Stop() error {
 		return fmt.Errorf("stop running watchers: %w", errors.Join(errs...))
 	}
 	return nil
+}
+
+// MustStop same as Stop but panics if any error occurs.
+func (cm *ConfigManager) MustStop() {
+	if err := cm.Stop(); err != nil {
+		panic(err)
+	}
 }
 
 // AddLoader adds a new loader to the configuration manager.
