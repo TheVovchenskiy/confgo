@@ -56,3 +56,35 @@ func WithDynamicJSONFile(
 		return nil
 	}
 }
+
+// WithYAMLFile adds a Loader layer with FileSource and YAMLFormatter to parse config data from.
+func WithYAMLFile(file string, yamlFormatterOptions ...YAMLFormatterOption) Option {
+	return func(cm *ConfigManager) error {
+		cm.AddLoader(Loader{
+			Source:    NewFileSource(file),
+			Formatter: NewYAMLFormatter(yamlFormatterOptions...),
+		})
+		return nil
+	}
+}
+
+// WithDynamicYAMLFile adds a Loader layer with FileSource, YAMLFormatter and
+// ModTimeWatcher with callbacks to parse and dynamically update config data from.
+func WithDynamicYAMLFile(
+	file string,
+	onUpdateSuccess CallbackFunc,
+	onUpdateError CallbackErrFunc,
+	yamlFormatterOptions ...YAMLFormatterOption,
+) Option {
+	return func(cm *ConfigManager) error {
+		s := NewFileSource(file)
+		cm.AddLoader(Loader{
+			Source:          s,
+			Formatter:       NewYAMLFormatter(yamlFormatterOptions...),
+			Watcher:         NewModTimeWatcher(s),
+			OnUpdateSuccess: onUpdateSuccess,
+			OnUpdateError:   onUpdateError,
+		})
+		return nil
+	}
+}

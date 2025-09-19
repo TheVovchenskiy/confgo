@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/caarlos0/env/v11"
+	"gopkg.in/yaml.v3"
 )
 
 const pairLen = 2
@@ -50,18 +51,18 @@ func (ef *EnvFormatter) Unmarshal(data []byte, v any) error {
 // JSONFormatterOption option that configures json decoder.
 type JSONFormatterOption func(jf *JSONFormatter)
 
-// DisallowUnknownFields causes the json.Decoder to return an error when the
+// JSONDisallowUnknownFields causes the json.Decoder to return an error when the
 // destination is a struct and the input contains object keys which do not match
 // any non-ignored, exported fields in the destination.
-func DisallowUnknownFields(jf *JSONFormatter) {
+func JSONDisallowUnknownFields(jf *JSONFormatter) {
 	jf.decoderTweaks = append(jf.decoderTweaks, func(decoder *json.Decoder) { decoder.DisallowUnknownFields() })
 }
 
 // UseNumber causes the json.Decoder to unmarshal a number into an interface
 // value as a json.Number instead of as a float64.
-func UseNumber(jf *JSONFormatter) {
-	jf.decoderTweaks = append(jf.decoderTweaks, func(decoder *json.Decoder) { decoder.UseNumber() })
-}
+// func UseNumber(jf *JSONFormatter) {
+// 	jf.decoderTweaks = append(jf.decoderTweaks, func(decoder *json.Decoder) { decoder.UseNumber() })
+// }
 
 var _ Formatter = (*JSONFormatter)(nil)
 
@@ -83,6 +84,40 @@ func NewJSONFormatter(opts ...JSONFormatterOption) *JSONFormatter {
 func (jf *JSONFormatter) Unmarshal(data []byte, v any) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	for _, tweak := range jf.decoderTweaks {
+		tweak(dec)
+	}
+	return dec.Decode(v)
+}
+
+// YAMLFormatterOption option that configures json decoder.
+type YAMLFormatterOption func(jf *YAMLFormatter)
+
+// YAMLDisallowUnknownFields causes the yaml.Decoder to return an error when the
+// destination is a struct and the input contains object keys which do not match
+// any non-ignored, exported fields in the destination.
+func YAMLDisallowUnknownFields(jf *YAMLFormatter) {
+	jf.decoderTweaks = append(jf.decoderTweaks, func(decoder *yaml.Decoder) { decoder.KnownFields(true) })
+}
+
+var _ Formatter = (*YAMLFormatter)(nil)
+
+type YAMLFormatter struct {
+	decoderTweaks []func(*yaml.Decoder)
+}
+
+func NewYAMLFormatter(opts ...YAMLFormatterOption) *YAMLFormatter {
+	yamlF := &YAMLFormatter{}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(yamlF)
+		}
+	}
+	return yamlF
+}
+
+func (yf *YAMLFormatter) Unmarshal(data []byte, v any) error {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	for _, tweak := range yf.decoderTweaks {
 		tweak(dec)
 	}
 	return dec.Decode(v)
