@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -137,17 +139,24 @@ type testConfigManagerFields struct {
 	loaders         []Loader
 	validators      []ValidateFunc
 	namedValidators map[string]ValidateFunc
+	isRunning       bool
 	// mu            sync.RWMutex
 }
 
 func newTestConfigManager(fields testConfigManagerFields) *ConfigManager {
-	return &ConfigManager{
+	cm := &ConfigManager{
 		constructor:     fields.constructor,
-		current:         fields.current,
 		loaders:         fields.loaders,
 		validators:      fields.validators,
 		namedValidators: fields.namedValidators,
+		isRunning:       atomic.Bool{},
+		current:         fields.current,
+		mu:              sync.RWMutex{},
 	}
+	if fields.isRunning {
+		cm.isRunning.Store(true)
+	}
+	return cm
 }
 
 func TestConfigManager_merge(t *testing.T) {
@@ -1166,5 +1175,46 @@ func TestConfigManager_Start_DynamicUpdate(t *testing.T) {
 	}
 	if !errorCalled {
 		t.Fatalf("OnUpdateError was not called")
+	}
+}
+
+func TestConfigManager_Config(t *testing.T) {
+	tests := []struct {
+		name   string
+		fields testConfigManagerFields
+		want   any
+	}{
+		{
+			name: "success",
+			fields: testConfigManagerFields{
+				current:   &TestConfig{Int: 10},
+				isRunning: true,
+			},
+			want: &TestConfig{Int: 10},
+		},
+		{
+			name: "config is nil",
+			fields: testConfigManagerFields{
+				current:   nil,
+				isRunning: true,
+			},
+			want: nil,
+		},
+		{
+			name: "success if not running",
+			fields: testConfigManagerFields{
+				current:   nil,
+				isRunning: false,
+			},
+			want: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cm := newTestConfigManager(tt.fields)
+			if got := cm.Config(); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("Config() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
