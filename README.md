@@ -2,7 +2,9 @@
 
 ## Install
 
-**TODO**
+```shell
+go get github.com/TheVovchenskiy/confgo
+```
 
 ## What is Confgo
 
