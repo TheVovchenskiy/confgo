@@ -1,6 +1,7 @@
 package confgo
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -20,6 +21,7 @@ func (s *fakeSource) Read() ([]byte, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
+
 	return s.data, nil
 }
 
@@ -48,6 +50,7 @@ func (f *fakeFormatter) Unmarshal(_ []byte, v any) error {
 	}
 
 	vElem.Set(dataVal)
+
 	return nil
 }
 
@@ -84,10 +87,13 @@ func (c *TestConfigAsMerger) Merge(other any) error {
 	if !ok {
 		return fmt.Errorf("error converting other config to *TestConfigAsMerger")
 	}
+
 	if c.Int == 123 {
 		return fmt.Errorf("test merge error")
 	}
+
 	c.Int = otherCfg.Int + 1
+
 	return nil
 }
 
@@ -105,6 +111,7 @@ func (c *TestConfigAsValidator) Validate() error {
 	if c.Int == 123 {
 		return fmt.Errorf("test validation error")
 	}
+
 	return nil
 }
 
@@ -121,6 +128,7 @@ func (c *testConfigAsValidatorAndMerger) Validate() error {
 	if c.Inner.String == "invalid value" {
 		return fmt.Errorf("test error")
 	}
+
 	return nil
 }
 
@@ -129,14 +137,16 @@ func (c *testConfigAsValidatorAndMerger) Merge(other any) error {
 	if !ok {
 		return fmt.Errorf("error converting other config to *testConfigAsValidatorAndMerger")
 	}
+
 	c.Int = otherCfg.Int + 1
+
 	return nil
 }
 
 type testConfigManagerFields struct {
 	constructor     ConstructorFunc
 	current         any
-	loaders         []Loader
+	loaders         []*Loader
 	validators      []ValidateFunc
 	namedValidators map[string]ValidateFunc
 	isRunning       bool
@@ -156,6 +166,7 @@ func newTestConfigManager(fields testConfigManagerFields) *ConfigManager {
 	if fields.isRunning {
 		cm.isRunning.Store(true)
 	}
+
 	return cm
 }
 
@@ -170,6 +181,7 @@ func TestConfigManager_merge(t *testing.T) {
 		dst any
 		src any
 	}
+
 	tests := []struct {
 		name      string
 		fields    testConfigManagerFields
@@ -422,6 +434,7 @@ func TestConfigManager_merge(t *testing.T) {
 			t.Parallel()
 
 			cm := newTestConfigManager(tt.fields)
+
 			gotErr := cm.merge(tt.args.dst, tt.args.src)
 			if tt.wantError {
 				if gotErr == nil {
@@ -440,6 +453,7 @@ func TestConfigManager_validate(t *testing.T) {
 	type args struct {
 		config any
 	}
+
 	tests := []struct {
 		name      string
 		fields    testConfigManagerFields
@@ -491,6 +505,7 @@ func TestConfigManager_validate(t *testing.T) {
 			t.Parallel()
 
 			cm := newTestConfigManager(tt.fields)
+
 			gotErr := cm.validate(tt.args.config)
 			if tt.wantError {
 				if gotErr == nil {
@@ -514,9 +529,9 @@ func TestConfigManager_reload(t *testing.T) {
 			name: "multiple loaders success",
 			fields: testConfigManagerFields{
 				constructor: func() any { return new(TestConfig) },
-				loaders: []Loader{
-					{Source: &fakeSource{data: []byte(`{"int": 1}`)}, Formatter: NewJSONFormatter()},
-					{Source: &fakeSource{data: []byte(`{"inner": {"string": "str"}}`)}, Formatter: NewJSONFormatter()},
+				loaders: []*Loader{
+					{source: &fakeSource{data: []byte(`{"int": 1}`)}, formatter: NewJSONFormatter()},
+					{source: &fakeSource{data: []byte(`{"inner": {"string": "str"}}`)}, formatter: NewJSONFormatter()},
 				},
 			},
 			wantConfig: &TestConfig{Int: 1, Inner: testInnerConfig{String: "str"}},
@@ -525,8 +540,8 @@ func TestConfigManager_reload(t *testing.T) {
 			name: "read error",
 			fields: testConfigManagerFields{
 				constructor: func() any { return new(TestConfig) },
-				loaders: []Loader{
-					{Source: &fakeSource{err: fmt.Errorf("test error")}, Formatter: NewJSONFormatter()},
+				loaders: []*Loader{
+					{source: &fakeSource{err: fmt.Errorf("test error")}, formatter: NewJSONFormatter()},
 				},
 			},
 			wantErr: true,
@@ -535,8 +550,8 @@ func TestConfigManager_reload(t *testing.T) {
 			name: "unmarshal error",
 			fields: testConfigManagerFields{
 				constructor: func() any { return new(TestConfig) },
-				loaders: []Loader{
-					{Source: &fakeSource{data: []byte(`{"int": 1}`)}, Formatter: &fakeFormatter{err: fmt.Errorf("test error")}},
+				loaders: []*Loader{
+					{source: &fakeSource{data: []byte(`{"int": 1}`)}, formatter: &fakeFormatter{err: fmt.Errorf("test error")}},
 				},
 			},
 			wantErr: true,
@@ -545,8 +560,8 @@ func TestConfigManager_reload(t *testing.T) {
 			name: "validate error",
 			fields: testConfigManagerFields{
 				constructor: func() any { return new(TestConfig) },
-				loaders: []Loader{
-					{Source: &fakeSource{data: []byte(`{"int": 1}`)}, Formatter: NewJSONFormatter()},
+				loaders: []*Loader{
+					{source: &fakeSource{data: []byte(`{"int": 1}`)}, formatter: NewJSONFormatter()},
 				},
 				validators: []ValidateFunc{func() error { return fmt.Errorf("test error") }},
 			},
@@ -572,91 +587,93 @@ func TestConfigManager_reload(t *testing.T) {
 	}
 }
 
-func TestConfigManager_validatePreRunState(t *testing.T) {
+func TestConfigManager_ensurePreRunState_Error(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		fields  testConfigManagerFields
-		wantErr bool
+		name        string
+		fields      testConfigManagerFields
+		expectedErr error
 	}{
 		{
 			name: "constructor is nil",
 			fields: testConfigManagerFields{
 				constructor: nil,
 			},
-			wantErr: true,
+			expectedErr: ErrConstructorIsNil,
 		},
 		{
 			name: "constructor returns non ptr value",
 			fields: testConfigManagerFields{
 				constructor: func() any { return TestConfig{} },
 			},
-			wantErr: true,
+			expectedErr: ErrConstructorMustBePointer,
 		},
 		{
 			name: "constructor returns ptr to non struct",
 			fields: testConfigManagerFields{
-				constructor: func() any { return ptr(1) },
+				constructor: func() any { return &TestConfig{Int: 1} },
 			},
-			wantErr: true,
+			expectedErr: ErrConstructorMustReturnZeroStruct,
 		},
 		{
 			name: "constructor returns non zero struct",
 			fields: testConfigManagerFields{
 				constructor: func() any { return &TestConfig{Int: 1, Inner: testInnerConfig{String: "test"}} },
 			},
-			wantErr: true,
+			expectedErr: ErrConstructorMustReturnZeroStruct,
 		},
 		{
 			name: "positional validator is nil",
 			fields: testConfigManagerFields{
 				constructor: testConfigConstructor,
+				loaders:     []*Loader{{source: &fakeSource{}, formatter: &fakeFormatter{}}},
 				validators:  []ValidateFunc{nil},
 			},
-			wantErr: true,
+			expectedErr: nil,
 		},
 		{
 			name: "named validator is nil",
 			fields: testConfigManagerFields{
 				constructor:     testConfigConstructor,
+				loaders:         []*Loader{{source: &fakeSource{}, formatter: &fakeFormatter{}}},
 				namedValidators: map[string]ValidateFunc{"test": nil},
 			},
-			wantErr: true,
+			expectedErr: nil,
 		},
 		{
 			name: "no loaders configured",
 			fields: testConfigManagerFields{
 				constructor: testConfigConstructor,
-				loaders:     []Loader{},
+				loaders:     []*Loader{},
 			},
-			wantErr: true,
+			expectedErr: ErrNoLoadersDefined,
 		},
 		{
 			name: "loader with nil source",
 			fields: testConfigManagerFields{
 				constructor: testConfigConstructor,
-				loaders:     []Loader{{Source: nil}},
+				loaders:     []*Loader{{source: nil}},
 			},
-			wantErr: true,
+			expectedErr: ErrSourceIsNil,
 		},
 		{
 			name: "loader with nil formatter",
 			fields: testConfigManagerFields{
 				constructor: testConfigConstructor,
-				loaders:     []Loader{{Source: &fakeSource{}, Formatter: nil}},
+				loaders:     []*Loader{{source: &fakeSource{}, formatter: nil}},
 			},
-			wantErr: true,
+			expectedErr: ErrFormatterIsNil,
 		},
 		{
 			name: "valid",
 			fields: testConfigManagerFields{
 				constructor:     testConfigConstructor,
-				loaders:         []Loader{{Source: &fakeSource{}, Formatter: &fakeFormatter{}}},
+				loaders:         []*Loader{{source: &fakeSource{}, formatter: &fakeFormatter{}}},
 				validators:      []ValidateFunc{func() error { return nil }},
 				namedValidators: map[string]ValidateFunc{"test": func() error { return nil }},
 			},
-			wantErr: false,
+			expectedErr: nil,
 		},
 	}
 	for _, tt := range tests {
@@ -664,10 +681,58 @@ func TestConfigManager_validatePreRunState(t *testing.T) {
 			t.Parallel()
 
 			cm := newTestConfigManager(tt.fields)
-			if err := cm.validatePreRunState(); (err != nil) != tt.wantErr {
-				t.Errorf("validatePreRunState() error = %v, wantErr %v", err, tt.wantErr)
+
+			err := cm.ensurePreRunState()
+			if !errors.Is(err, tt.expectedErr) {
+				t.Errorf("ensurePreRunState()\n\terror: %v\n\twantErr: %v", err, tt.expectedErr)
 			}
 		})
+	}
+}
+
+func TestConfigManager_ensurePreRunState_RemoveInvalidValues(t *testing.T) {
+	t.Parallel()
+
+	cm := newTestConfigManager(testConfigManagerFields{
+		constructor:     testConfigConstructor,
+		loaders:         []*Loader{{source: &fakeSource{}, formatter: &fakeFormatter{}}, nil},
+		validators:      []ValidateFunc{func() error { return nil }, nil},
+		namedValidators: map[string]ValidateFunc{"test": func() error { return nil }, "nil": nil},
+	})
+
+	err := cm.ensurePreRunState()
+	if err != nil {
+		t.Errorf("ensurePreRunState() error = %v, want nil", err)
+	}
+
+	if len(cm.loaders) != 1 {
+		t.Errorf("loaders must contain 1 element")
+	}
+
+	if len(cm.validators) != 1 {
+		t.Errorf("validators must contain 1 element")
+	}
+
+	if len(cm.namedValidators) != 1 {
+		t.Errorf("named validators must contain 1 element")
+	}
+
+	for _, l := range cm.loaders {
+		if l == nil {
+			t.Errorf("loader must not be nil")
+		}
+	}
+
+	for _, v := range cm.validators {
+		if v == nil {
+			t.Errorf("validator must not be nil")
+		}
+	}
+
+	for _, v := range cm.namedValidators {
+		if v == nil {
+			t.Errorf("validator must not be nil")
+		}
 	}
 }
 
@@ -681,37 +746,37 @@ func TestConfigManager_runWatchers_RegisterOnlyNonNilWatchers(t *testing.T) {
 
 	cm := newTestConfigManager(testConfigManagerFields{
 		constructor: testConfigConstructor,
-		loaders: []Loader{
+		loaders: []*Loader{
 			{
-				Source:    &fakeSource{data: []byte("test")},
-				Formatter: &fakeFormatter{data: TestConfig{Int: 1}},
-				Watcher:   watcher1,
-				OnUpdateSuccess: func() {
+				source:    &fakeSource{data: []byte("test")},
+				formatter: &fakeFormatter{data: TestConfig{Int: 1}},
+				watcher:   watcher1,
+				onUpdateSuccess: func() {
 					events <- "A:success"
 				},
-				OnUpdateError: func(_ error) {
+				onUpdateError: func(_ error) {
 					events <- "A:error"
 				},
 			},
 			{
-				Source:    &fakeSource{data: []byte("test")},
-				Formatter: &fakeFormatter{data: TestConfig{Int: 1}},
-				Watcher:   watcher2,
-				OnUpdateSuccess: func() {
+				source:    &fakeSource{data: []byte("test")},
+				formatter: &fakeFormatter{data: TestConfig{Int: 1}},
+				watcher:   watcher2,
+				onUpdateSuccess: func() {
 					events <- "B:success"
 				},
-				OnUpdateError: func(_ error) {
+				onUpdateError: func(_ error) {
 					events <- "B:error"
 				},
 			},
 			{
-				Source:    &fakeSource{data: []byte("test")},
-				Formatter: &fakeFormatter{data: TestConfig{Int: 1}},
-				Watcher:   nil, // must be ignored
-				OnUpdateSuccess: func() {
+				source:    &fakeSource{data: []byte("test")},
+				formatter: &fakeFormatter{data: TestConfig{Int: 1}},
+				watcher:   nil, // must be ignored
+				onUpdateSuccess: func() {
 					events <- "C:success"
 				},
-				OnUpdateError: func(_ error) {
+				onUpdateError: func(_ error) {
 					events <- "C:error"
 				},
 			},
@@ -723,17 +788,20 @@ func TestConfigManager_runWatchers_RegisterOnlyNonNilWatchers(t *testing.T) {
 	if watcher1.callback == nil {
 		t.Fatalf("watcher #1 did not get a callback")
 	}
+
 	if watcher2.callback == nil {
 		t.Fatalf("watcher #2 did not get a callback")
 	}
 
 	watcher1.Trigger()
+
 	got := <-events
 	if !strings.HasPrefix(got, "A:") {
 		t.Fatalf("expected event from loader A, got %q", got)
 	}
 
 	watcher2.Trigger()
+
 	got = <-events
 	if !strings.HasPrefix(got, "B:") {
 		t.Fatalf("expected event from loader B, got %q", got)
@@ -755,15 +823,15 @@ func TestConfigManager_runWatchers_CallbackMayBeTriggeredMultipleTimes(t *testin
 	watcher := NewTriggerWatcher()
 	cm := &ConfigManager{
 		constructor: testConfigConstructor,
-		loaders: []Loader{
+		loaders: []*Loader{
 			{
-				Source:    &fakeSource{data: []byte("test")},
-				Formatter: &fakeFormatter{data: TestConfig{Int: 1}},
-				Watcher:   watcher,
-				OnUpdateSuccess: func() {
+				source:    &fakeSource{data: []byte("test")},
+				formatter: &fakeFormatter{data: TestConfig{Int: 1}},
+				watcher:   watcher,
+				onUpdateSuccess: func() {
 					events <- "X:success"
 				},
-				OnUpdateError: func(_ error) {
+				onUpdateError: func(_ error) {
 					events <- "X:error"
 				},
 			},
@@ -797,14 +865,8 @@ func TestConfigManager_runWatchers_NoPanicsIfCallbacksNil(t *testing.T) {
 	watcher := NewTriggerWatcher()
 	cm := &ConfigManager{
 		constructor: testConfigConstructor,
-		loaders: []Loader{
-			{
-				Source:          &fakeSource{data: []byte("test")},
-				Formatter:       &fakeFormatter{data: TestConfig{Int: 1}},
-				Watcher:         watcher,
-				OnUpdateSuccess: nil,
-				OnUpdateError:   nil,
-			},
+		loaders: []*Loader{
+			NewLoader(&fakeSource{data: []byte("test")}, &fakeFormatter{data: TestConfig{Int: 1}}, WithWatcher(watcher)),
 		},
 	}
 
@@ -819,6 +881,7 @@ func TestConfigManager_runWatchers_NoPanicsIfCallbacksNil(t *testing.T) {
 			t.Fatalf("callback panicked: %v", r)
 		}
 	}()
+
 	watcher.Trigger()
 }
 
@@ -877,12 +940,12 @@ func TestConfigManager_New(t *testing.T) {
 	}
 }
 
-//nolint:cyclop
 func TestConfigManager_Start_Static(t *testing.T) {
 	type args struct {
 		constructor ConstructorFunc
 		options     []Option
 	}
+
 	tests := []struct {
 		name    string
 		args    args
@@ -1076,11 +1139,13 @@ func TestConfigManager_Start_Static(t *testing.T) {
 			if err != nil {
 				t.Fatalf("NewConfigManager() error = %v, wantErr %v", err, false)
 			}
+
 			defer func() {
 				if err := cm.Stop(); err != nil {
 					t.Fatalf("Stop() error = %v, wantErr %v", err, false)
 				}
 			}()
+
 			if err := cm.Start(); (err != nil) != tt.wantErr {
 				t.Fatalf("Start() error = %v, wantErr %v", err, tt.wantErr)
 			} else if tt.wantErr {
@@ -1095,7 +1160,6 @@ func TestConfigManager_Start_Static(t *testing.T) {
 	}
 }
 
-//nolint:cyclop
 func TestConfigManager_Start_DynamicUpdate(t *testing.T) {
 	testFile := "test_dynamic_config.json"
 
@@ -1103,6 +1167,7 @@ func TestConfigManager_Start_DynamicUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to setup json config: %v", err)
 	}
+
 	t.Cleanup(cleanup)
 
 	cm, err := NewConfigManagerFor[TestConfig]()
@@ -1111,36 +1176,35 @@ func TestConfigManager_Start_DynamicUpdate(t *testing.T) {
 	}
 
 	var successCalled, errorCalled bool
+
 	watcher := NewTriggerWatcher()
-	cm.AddLoader(Loader{
-		Source:    NewFileSource(testFile),
-		Formatter: NewJSONFormatter(),
-		Watcher:   watcher,
-		OnUpdateSuccess: func() {
-			successCalled = true
-		},
-		OnUpdateError: func(_ error) {
-			errorCalled = true
-		},
-	})
+	cm.AddLoader(NewLoader(NewFileSource(testFile), NewJSONFormatter(),
+		WithWatcher(watcher),
+		WithOnUpdateSuccess(func() { successCalled = true }),
+		WithOnUpdateError(func(error) { errorCalled = true }),
+	))
 
 	defer func() {
 		if err := cm.Stop(); err != nil {
 			t.Fatalf("Stop() error = %v, wantErr %v", err, false)
 		}
 	}()
+
 	if err := cm.Start(); err != nil {
 		t.Fatalf("Start() error = %v, wantErr %v", err, false)
 	}
 
 	cfg1 := cm.Config()
+
 	want1 := &TestConfig{Int: 10}
 	if !reflect.DeepEqual(cfg1, want1) {
 		t.Fatalf("Config() got = %v, want %v", cfg1, want1)
 	}
+
 	if successCalled {
 		t.Fatalf("Unexpected call of OnUpdateSuccess")
 	}
+
 	if errorCalled {
 		t.Fatalf("Unexpected call of OnUpdateError")
 	}
@@ -1148,19 +1212,24 @@ func TestConfigManager_Start_DynamicUpdate(t *testing.T) {
 	if err := updateJSONFile(testFile, map[string]any{"int": 20}); err != nil {
 		t.Fatalf("failed to update json config: %v", err)
 	}
+
 	watcher.Trigger()
 
 	cfg2 := cm.Config()
+
 	want2 := &TestConfig{Int: 20}
 	if !reflect.DeepEqual(cfg2, want2) {
 		t.Fatalf("Config() got = %v, want %v", cfg2, want2)
 	}
+
 	if !successCalled {
 		t.Fatalf("OnUpdateSuccess was not called")
 	}
+
 	if errorCalled {
 		t.Fatalf("Unexpected call of OnUpdateError")
 	}
+
 	successCalled = false
 
 	cleanup()
@@ -1170,9 +1239,11 @@ func TestConfigManager_Start_DynamicUpdate(t *testing.T) {
 	if !reflect.DeepEqual(cfg3, want2) {
 		t.Fatalf("Config() got = %v, want %v", cfg3, want2)
 	}
+
 	if successCalled {
 		t.Fatalf("Unexpected call of OnUpdateSuccess")
 	}
+
 	if !errorCalled {
 		t.Fatalf("OnUpdateError was not called")
 	}
@@ -1216,5 +1287,23 @@ func TestConfigManager_Config(t *testing.T) {
 				t.Errorf("Config() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestConfigManager_AddLoader_ManagerIsRunning(t *testing.T) {
+	t.Parallel()
+
+	cm := newTestConfigManager(testConfigManagerFields{
+		constructor:     testConfigConstructor,
+		loaders:         []*Loader{{source: &fakeSource{}, formatter: &fakeFormatter{}}},
+		validators:      []ValidateFunc{func() error { return nil }},
+		namedValidators: map[string]ValidateFunc{"test": func() error { return nil }},
+		isRunning:       true,
+	})
+
+	cm.AddLoader(NewLoader(&fakeSource{}, &fakeFormatter{}))
+
+	if len(cm.loaders) != 1 {
+		t.Errorf("len(cm.loaders) = %d, want 1", len(cm.loaders))
 	}
 }

@@ -11,6 +11,7 @@ func TestEnvFormatter_parseRawIntoMap(t *testing.T) {
 	type args struct {
 		raw []byte
 	}
+
 	tests := []struct {
 		name string
 		args args
@@ -83,6 +84,7 @@ func TestJSONFormatter_Unmarshal(t *testing.T) {
 		data []byte
 		v    any
 	}
+
 	tests := []struct {
 		name    string
 		opts    []JSONFormatterOption
@@ -154,6 +156,7 @@ func TestJSONFormatter_Unmarshal(t *testing.T) {
 			} else if tt.wantErr {
 				return
 			}
+
 			if !reflect.DeepEqual(tt.args.v, tt.want) {
 				t.Fatalf("Unmarshal() got = %v, want %v", tt.args.v, tt.want)
 			}
@@ -166,6 +169,7 @@ func TestYAMLFormatter_Unmarshal(t *testing.T) {
 		data []byte
 		v    any
 	}
+
 	tests := []struct {
 		name    string
 		opts    []YAMLFormatterOption
@@ -237,6 +241,7 @@ func TestYAMLFormatter_Unmarshal(t *testing.T) {
 			} else if tt.wantErr {
 				return
 			}
+
 			if !reflect.DeepEqual(tt.args.v, tt.want) {
 				t.Fatalf("Unmarshal() got = %v, want %v", tt.args.v, tt.want)
 			}

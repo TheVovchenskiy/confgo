@@ -16,10 +16,13 @@ func writeFile(filePath, content string) (err error) {
 	if err != nil {
 		return err
 	}
+
 	defer func() {
 		err = file.Close()
 	}()
+
 	_, err = file.WriteString(content)
+
 	return
 }
 
@@ -35,6 +38,7 @@ func setupFile(filePath, content string) (func(), error) {
 			if errors.Is(err, os.ErrNotExist) {
 				return
 			}
+
 			panic(fmt.Sprintf("error removing test config file %q: %s", filePath, err.Error()))
 		}
 	}, nil
@@ -45,6 +49,7 @@ func setupJSONConfig(filePath string, data map[string]any) (func(), error) {
 	if err != nil {
 		return nil, fmt.Errorf("error marshalling json: %w", err)
 	}
+
 	return setupFile(filePath, string(bytes))
 }
 
@@ -53,5 +58,6 @@ func updateJSONFile(filePath string, data map[string]any) error {
 	if err != nil {
 		return fmt.Errorf("error marshalling json: %w", err)
 	}
+
 	return writeFile(filePath, string(bytes))
 }

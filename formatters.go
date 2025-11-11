@@ -23,19 +23,24 @@ func NewEnvFormatter() *EnvFormatter {
 
 func (ef *EnvFormatter) parseRawIntoMap(raw []byte) map[string]string {
 	res := make(map[string]string)
+
 	lines := bytes.Split(raw, []byte("\n"))
 	for _, line := range lines {
 		if len(line) == 0 {
 			continue
 		}
+
 		pair := bytes.SplitN(line, []byte("="), pairLen)
 		if len(pair) != pairLen {
 			// This can only happen if the string does not have an equal sign. In this case,
-			// the slice length will be equal to 1. The case where the slice length is 2 is impossible.
+			// the slice length will be equal to 1. The case where the slice length is more
+			// than 2 is impossible.
 			continue
 		}
+
 		res[string(pair[0])] = string(pair[1])
 	}
+
 	return res
 }
 
@@ -73,20 +78,23 @@ type JSONFormatter struct {
 
 func NewJSONFormatter(opts ...JSONFormatterOption) *JSONFormatter {
 	jsonF := &JSONFormatter{}
+
 	for _, opt := range opts {
 		if opt != nil {
 			opt(jsonF)
 		}
 	}
+
 	return jsonF
 }
 
-func (jf *JSONFormatter) Unmarshal(data []byte, v any) error {
+func (jf *JSONFormatter) Unmarshal(data []byte, val any) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	for _, tweak := range jf.decoderTweaks {
 		tweak(dec)
 	}
-	return dec.Decode(v)
+
+	return dec.Decode(val)
 }
 
 // YAMLFormatterOption option that configures json decoder.
@@ -107,18 +115,21 @@ type YAMLFormatter struct {
 
 func NewYAMLFormatter(opts ...YAMLFormatterOption) *YAMLFormatter {
 	yamlF := &YAMLFormatter{}
+
 	for _, opt := range opts {
 		if opt != nil {
 			opt(yamlF)
 		}
 	}
+
 	return yamlF
 }
 
-func (yf *YAMLFormatter) Unmarshal(data []byte, v any) error {
+func (yf *YAMLFormatter) Unmarshal(data []byte, val any) error {
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	for _, tweak := range yf.decoderTweaks {
 		tweak(dec)
 	}
-	return dec.Decode(v)
+
+	return dec.Decode(val)
 }
