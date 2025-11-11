@@ -11,6 +11,7 @@ func Test_stringsToBytes(t *testing.T) {
 	type args struct {
 		s []string
 	}
+
 	tests := []struct {
 		name string
 		args args

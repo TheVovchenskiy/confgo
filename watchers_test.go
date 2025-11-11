@@ -19,17 +19,21 @@ type mockModTimer struct {
 func (m *mockModTimer) ModTime() (time.Time, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
 	var modTime time.Time
 	if m.callCount >= len(m.times) {
 		modTime = m.times[len(m.times)-1]
 	} else {
 		modTime = m.times[m.callCount]
 	}
+
 	var err error
 	if m.callCount < len(m.errs) && m.errs[m.callCount] != nil {
 		err = m.errs[m.callCount]
 	}
+
 	m.callCount++
+
 	return modTime, err
 }
 
@@ -44,9 +48,12 @@ func Test_ModTimeWatcher_NoCallbackOnInitialModTime(t *testing.T) {
 	watcher.interval = 10 * time.Millisecond
 
 	var calls int
+
 	done := make(chan struct{})
+
 	watcher.Watch(func() {
 		calls++
+
 		close(done)
 	})
 
@@ -57,6 +64,7 @@ func Test_ModTimeWatcher_NoCallbackOnInitialModTime(t *testing.T) {
 		// ok
 		close(done)
 	}
+
 	if err := watcher.Stop(); err != nil {
 		t.Errorf("Unexpected error while stopping watcher: %v", err)
 	}
@@ -78,7 +86,9 @@ func Test_ModTimeWatcher_CallbackOnModTimeIncrease(t *testing.T) {
 	watcher.interval = 10 * time.Millisecond
 
 	var calls int
+
 	done := make(chan struct{})
+
 	watcher.Watch(func() {
 		calls++
 		if calls == 2 {
@@ -92,6 +102,7 @@ func Test_ModTimeWatcher_CallbackOnModTimeIncrease(t *testing.T) {
 	case <-time.After(300 * time.Millisecond):
 		t.Error("callback was not called as expected")
 	}
+
 	if err := watcher.Stop(); err != nil {
 		t.Errorf("Unexpected error while stopping watcher: %v", err)
 	}
@@ -110,14 +121,17 @@ func Test_ModTimeWatcher_NoCallbackWhenNoModTimeChange(t *testing.T) {
 	watcher.interval = 10 * time.Millisecond
 
 	var calls int
+
 	watcher.Watch(func() {
 		calls++
 	})
 
 	time.Sleep(60 * time.Millisecond)
+
 	if err := watcher.Stop(); err != nil {
 		t.Errorf("Unexpected error while stopping watcher: %v", err)
 	}
+
 	if calls > 1 {
 		t.Errorf("callback was called %d times, expected at most 1", calls)
 	}
@@ -143,6 +157,7 @@ func Test_ModTimeWatcher_IgnoresModTimeErrors(t *testing.T) {
 	watcher.interval = 10 * time.Millisecond
 
 	call := make(chan struct{})
+
 	watcher.Watch(func() {
 		close(call)
 	})
@@ -153,6 +168,7 @@ func Test_ModTimeWatcher_IgnoresModTimeErrors(t *testing.T) {
 	case <-time.After(200 * time.Millisecond):
 		t.Error("callback was not called after error resolved")
 	}
+
 	if err := watcher.Stop(); err != nil {
 		t.Errorf("Unexpected error while stopping watcher: %v", err)
 	}
@@ -168,6 +184,7 @@ func Test_ModTimeWatcher_Stop(t *testing.T) {
 	watcher.interval = 10 * time.Millisecond
 
 	var calls int
+
 	watcher.Watch(func() {
 		calls++
 	})
@@ -178,7 +195,9 @@ func Test_ModTimeWatcher_Stop(t *testing.T) {
 	}
 	// Wait to ensure callback is not called
 	n := calls
+
 	time.Sleep(30 * time.Millisecond)
+
 	if calls != n {
 		t.Errorf("callback called after Stop: before=%d, after=%d", n, calls)
 	}

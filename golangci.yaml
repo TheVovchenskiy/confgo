@@ -94,13 +94,13 @@ linters:
     - zerologlint
     - godot
     - exhaustruct
+    - wsl_v5
   disable:
     - depguard
     - forbidigo
     - nlreturn
     - tagalign
     - wrapcheck
-    - wsl_v5
 
   settings:
     testpackage:
@@ -145,6 +145,7 @@ linters:
           - maintidx
           - err113
           - exhaustruct
+          - cyclop
         path: _test.go
     paths:
       - third_party$

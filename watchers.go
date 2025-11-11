@@ -17,7 +17,7 @@ type ModTimer interface {
 
 var _ Watcher = (*ModTimeWatcher)(nil)
 
-// ModTimeWatcher is a watcher that monitors file modification times to detect configuration changes.
+// ModTimeWatcher is a watcher that monitors the data modification times to detect configuration changes.
 type ModTimeWatcher struct {
 	modTimer ModTimer
 	interval time.Duration
@@ -44,10 +44,12 @@ func (fw *ModTimeWatcher) Watch(callback func()) {
 				if err != nil {
 					continue
 				}
+
 				if fw.lastMod.IsZero() {
 					fw.lastMod = modTime
 				} else if modTime.After(fw.lastMod) {
 					fw.lastMod = modTime
+
 					callback()
 				}
 			}
@@ -79,6 +81,7 @@ func NewTriggerWatcher() *TriggerWatcher {
 func (tw *TriggerWatcher) Watch(callback func()) {
 	tw.mu.Lock()
 	defer tw.mu.Unlock()
+
 	tw.callback = callback
 }
 
@@ -90,6 +93,7 @@ func (tw *TriggerWatcher) Trigger() {
 	tw.mu.Lock()
 	cb := tw.callback
 	tw.mu.Unlock()
+
 	if cb != nil {
 		cb()
 	}
